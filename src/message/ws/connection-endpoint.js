@@ -293,7 +293,7 @@ module.exports = class WSConnectionEndpoint extends events.EventEmitter {
     }
 
     const socketWrapper = new SocketWrapper(
-      external, handshakeData, this._getOption('heartbeatInterval'),
+      socket, handshakeData, this._getOption('heartbeatInterval'),
       this._logger, this._options, this
     )
 
@@ -628,8 +628,7 @@ module.exports = class WSConnectionEndpoint extends events.EventEmitter {
     if (socketWrapper.user !== OPEN) {
       this.emit('client-disconnected', socketWrapper)
     }
-
-    uws.native.clearUserData(socketWrapper._external)
+    
     this._authenticatedSockets.delete(socketWrapper)
   }
 
