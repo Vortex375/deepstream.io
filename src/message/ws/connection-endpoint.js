@@ -288,8 +288,8 @@ module.exports = class WSConnectionEndpoint extends events.EventEmitter {
     const address = req.socket.remoteAddress
     const handshakeData = {
       remoteAddress: address,
-      headers: this._upgradeRequest.headers,
-      referer: this._upgradeRequest.headers.referer
+      headers: req.headers,
+      referer: req.headers.referer
     }
 
     const socketWrapper = new SocketWrapper(
