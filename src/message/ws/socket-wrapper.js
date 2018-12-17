@@ -103,10 +103,10 @@ class WsSocketWrapper extends EventEmitter {
    */
   sendNative (message, allowBuffering) {
     if (this._config.outgoingBufferTimeout === 0) {
-      this._socket.send.send(message)
+      this._socket.send(message)
     } else if (!allowBuffering) {
       this.flush()
-      this._socket.send.send(message)
+      this._socket.send(message)
     } else {
       this._bufferedWrites += message
       this._connectionEndpoint.scheduleFlush(this)
@@ -120,7 +120,7 @@ class WsSocketWrapper extends EventEmitter {
    */
   flush () {
     if (this._bufferedWrites !== '') {
-      this._socket.send.send(this._bufferedWrites)
+      this._socket.send(this._bufferedWrites)
       this._bufferedWrites = ''
     }
   }
