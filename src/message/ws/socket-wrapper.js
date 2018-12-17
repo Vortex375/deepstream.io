@@ -2,7 +2,7 @@
 
 const C = require('../../constants/constants')
 const messageBuilder = require('../message-builder')
-const uws = require('uws')
+const WebSocket = require('ws')
 
 const EventEmitter = require('events').EventEmitter
 
@@ -11,7 +11,7 @@ const EventEmitter = require('events').EventEmitter
  * and provides higher level methods that are integrated
  * with deepstream's message structure
  *
- * @param {WebSocket} external        uws native websocket
+ * @param {WebSocket} socket        WebSocket
  * @param {Object} handshakeData      headers from the websocket http handshake
  * @param {Logger} logger
  * @param {Object} config             configuration options
@@ -21,9 +21,9 @@ const EventEmitter = require('events').EventEmitter
  *
  * @constructor
  */
-class UwsSocketWrapper extends EventEmitter {
+class WsSocketWrapper extends EventEmitter {
 
-  constructor (external, handshakeData, logger, config, connectionEndpoint) {
+  constructor (socket, handshakeData, heartbeatInterval, logger, config, connectionEndpoint) {
     super()
     this.isClosed = false
     this._logger = logger
@@ -33,11 +33,23 @@ class UwsSocketWrapper extends EventEmitter {
     this.setMaxListeners(0)
     this.uuid = Math.random()
     this._handshakeData = handshakeData
-    this._external = external
+    this._socket = socket
 
     this._bufferedWrites = ''
     this._config = config
     this._connectionEndpoint = connectionEndpoint
+
+    this._bindSocket(heartbeatInterval)
+  }
+
+  _bindSocket(heartbeatInterval) {
+    this._socket.on('error', this.close.bind(this))
+    this._socket.on('close', this.close.bind(this))
+    this._socket.on('message', this.onMessage.bind(this))
+
+    this._heartbeatInterval = setInterval(() => {
+      this.sendNative(messageBuilder.getMsg(C.TOPIC.CONNECTION, C.ACTIONS.PING))
+    }, heartbeatInterval)
   }
 
   /**
@@ -50,8 +62,8 @@ class UwsSocketWrapper extends EventEmitter {
    */
   // eslint-disable-next-line class-methods-use-this
   prepareMessage (message) {
-    UwsSocketWrapper.lastPreparedMessage = message
-    return uws.native.server.prepareMessage(message, uws.OPCODE_TEXT)
+    WsSocketWrapper.lastPreparedMessage = message
+    return message
   }
 
   /**
@@ -65,7 +77,7 @@ class UwsSocketWrapper extends EventEmitter {
    */
   sendPrepared (preparedMessage) {
     this.flush()
-    uws.native.server.sendPrepared(this._external, preparedMessage)
+    this._socket.send(preparedMessage)
   }
 
   /**
@@ -78,7 +90,7 @@ class UwsSocketWrapper extends EventEmitter {
    */
   // eslint-disable-next-line class-methods-use-this
   finalizeMessage (preparedMessage) {
-    uws.native.server.finalizeMessage(preparedMessage)
+    
   }
 
   /**
@@ -91,10 +103,10 @@ class UwsSocketWrapper extends EventEmitter {
    */
   sendNative (message, allowBuffering) {
     if (this._config.outgoingBufferTimeout === 0) {
-      uws.native.server.send(this._external, message, uws.OPCODE_TEXT)
+      this._socket.send.send(message)
     } else if (!allowBuffering) {
       this.flush()
-      uws.native.server.send(this._external, message, uws.OPCODE_TEXT)
+      this._socket.send.send(message)
     } else {
       this._bufferedWrites += message
       this._connectionEndpoint.scheduleFlush(this)
@@ -108,7 +120,7 @@ class UwsSocketWrapper extends EventEmitter {
    */
   flush () {
     if (this._bufferedWrites !== '') {
-      uws.native.server.send(this._external, this._bufferedWrites, uws.OPCODE_TEXT)
+      this._socket.send.send(this._bufferedWrites)
       this._bufferedWrites = ''
     }
   }
@@ -166,7 +178,7 @@ class UwsSocketWrapper extends EventEmitter {
    * @returns {void}
    */
   destroy () {
-    uws.native.server.terminate(this._external)
+    this._socket.terminate()
   }
 
   close () {
@@ -175,6 +187,10 @@ class UwsSocketWrapper extends EventEmitter {
     this.emit('close', this)
     this._logger.info(C.EVENT.CLIENT_DISCONNECTED, this.user)
     this.removeAllListeners()
+    if (this._heartbeatInterval) {
+      clearTimeout(this._heartbeatInterval)
+      this._heartbeatInterval = null
+    }
   }
 
   /**
@@ -190,5 +206,5 @@ class UwsSocketWrapper extends EventEmitter {
   }
 }
 
-UwsSocketWrapper.lastPreparedMessage = null
-module.exports = UwsSocketWrapper
+WsSocketWrapper.lastPreparedMessage = null
+module.exports = WsSocketWrapper

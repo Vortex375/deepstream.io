@@ -19,7 +19,7 @@ const httpsMock = new HttpMock()
 httpMock.createServer = httpMock.createServer
 httpsMock.createServer = httpsMock.createServer
 
-const ConnectionEndpoint = proxyquire('../../src/message/uws/connection-endpoint', {
+const ConnectionEndpoint = proxyquire('../../src/message/ws/connection-endpoint', {
   uws: uwsMock,
   http: httpMock,
   https: httpsMock,

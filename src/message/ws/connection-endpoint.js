@@ -7,7 +7,7 @@ const SocketWrapper = require('./socket-wrapper')
 const events = require('events')
 const http = require('http')
 const https = require('https')
-const uws = require('uws')
+const WebSocket = require('ws')
 
 const OPEN = 'OPEN'
 
@@ -23,12 +23,12 @@ const OPEN = 'OPEN'
  * @param {Object} options the extended default options
  * @param {Function} readyCallback will be invoked once both the ws is ready
  */
-module.exports = class UWSConnectionEndpoint extends events.EventEmitter {
+module.exports = class WSConnectionEndpoint extends events.EventEmitter {
   constructor (options) {
     super()
     this._options = options
     this.isReady = false
-    this.description = 'µWebSocket Connection Endpoint'
+    this.description = 'WebSocket Connection Endpoint'
     this.initialised = false
 
     this._flushSockets = this._flushSockets.bind(this)
@@ -76,14 +76,14 @@ module.exports = class UWSConnectionEndpoint extends events.EventEmitter {
     this._urlPath = this._getOption('urlPath')
     this._unauthenticatedClientTimeout = this._getOption('unauthenticatedClientTimeout')
 
-    this._uwsInit()
-
     this._server = this._createHttpServer()
     this._server.on('request', this._handleHealthCheck.bind(this))
 
     this._server.once('listening', this._onReady.bind(this))
     this._server.on('error', this._onError.bind(this))
-    this._server.on('upgrade', this._onUpgradeRequest.bind(this))
+    // this._server.on('upgrade', this._onUpgradeRequest.bind(this))
+
+    this._wsInit(this._server)
 
     const port = this._getOption('port')
     const host = this._getOption('host')
@@ -137,35 +137,45 @@ module.exports = class UWSConnectionEndpoint extends events.EventEmitter {
    * @private
    * @returns {void}
    */
-  _uwsInit () {
-    const maxMessageSize = this._getOption('maxMessageSize')
-    const perMessageDeflate = this._getOption('perMessageDeflate')
-    this._serverGroup = uws.native.server.group.create(perMessageDeflate, maxMessageSize)
-
-    this._noDelay = this._getOption('noDelay')
-
-    uws.native.server.group.onDisconnection(
-      this._serverGroup,
-      (external, code, message, socketWrapper) => {
-        if (socketWrapper) {
-          socketWrapper.close()
-        }
-      }
-    )
-
-    uws.native.server.group.onMessage(this._serverGroup, (message, socketWrapper) => {
-      socketWrapper.onMessage(message)
+  _wsInit (server) {
+    this._wsServer = new WebSocket.Server({
+      server: server,
+      path: this._urlPath,
+      perMessageDeflate: this._getOption('perMessageDeflate'),
+      maxPayload: this._getOption('maxMessageSize')
     })
 
-    uws.native.server.group.onPing(this._serverGroup, () => {})
-    uws.native.server.group.onPong(this._serverGroup, () => {})
-    uws.native.server.group.onConnection(this._serverGroup, this._onConnection.bind(this))
+    this._wsServer.on('error', this._onError.bind(this))
+    this._wsServer.on('connection', this._onConnection.bind(this))
 
-    uws.native.server.group.startAutoPing(
-      this._serverGroup,
-      this._getOption('heartbeatInterval'),
-      messageBuilder.getMsg(C.TOPIC.CONNECTION, C.ACTIONS.PING)
-    )
+    // const maxMessageSize = this._getOption('maxMessageSize')
+    // const perMessageDeflate = this._getOption('perMessageDeflate')
+    // this._serverGroup = uws.native.server.group.create(perMessageDeflate, maxMessageSize)
+
+    // this._noDelay = this._getOption('noDelay')
+
+    // uws.native.server.group.onDisconnection(
+    //   this._serverGroup,
+    //   (external, code, message, socketWrapper) => {
+    //     if (socketWrapper) {
+    //       socketWrapper.close()
+    //     }
+    //   }
+    // )
+
+    // uws.native.server.group.onMessage(this._serverGroup, (message, socketWrapper) => {
+    //   socketWrapper.onMessage(message)
+    // })
+
+    // uws.native.server.group.onPing(this._serverGroup, () => {})
+    // uws.native.server.group.onPong(this._serverGroup, () => {})
+    // uws.native.server.group.onConnection(this._serverGroup, this._onConnection.bind(this))
+
+    // uws.native.server.group.startAutoPing(
+    //   this._serverGroup,
+    //   this._getOption('heartbeatInterval'),
+    //   messageBuilder.getMsg(C.TOPIC.CONNECTION, C.ACTIONS.PING)
+    // )
   }
 
   /**
@@ -268,27 +278,24 @@ module.exports = class UWSConnectionEndpoint extends events.EventEmitter {
   /**
    * Receives a connected socket, wraps it in a SocketWrapper, sends a connection ack to the user
    * and subscribes to authentication messages.
-   * @param {Websocket} socket
-   *
-   * @param {WebSocket} external    uws native websocket
+   * @param {Websocket} socke WebSocket
+   * @param {http.IncomingMessage} req upgrade request
    *
    * @private
    * @returns {void}
    */
-  _onConnection (external) {
-    const address = uws.native.getAddress(external)
+  _onConnection (socket, req) {
+    const address = req.socket.remoteAddress
     const handshakeData = {
-      remoteAddress: address[1],
+      remoteAddress: address,
       headers: this._upgradeRequest.headers,
       referer: this._upgradeRequest.headers.referer
     }
 
-    this._upgradeRequest = null
-
     const socketWrapper = new SocketWrapper(
-      external, handshakeData, this._logger, this._options, this
+      external, handshakeData, this._getOption('heartbeatInterval'),
+      this._logger, this._options, this
     )
-    uws.native.setUserData(external, socketWrapper)
 
     this._logger.info(
       C.EVENT.INCOMING_CONNECTION,
@@ -651,17 +658,17 @@ module.exports = class UWSConnectionEndpoint extends events.EventEmitter {
    * @private
    * @returns {void}
    */
-  _onUpgradeRequest (request, socket) {
-    const requestPath = request.url.split('?')[0].split('#')[0]
-    if (!this._urlPath || this._urlPath === requestPath) {
-      this._handleUpgrade(request, socket)
-    }
-    try {
-      UWSConnectionEndpoint._terminateSocket(socket, 400, 'URL not supported')
-    } catch (e) {
-      // already terminated
-    }
-  }
+  // _onUpgradeRequest (request, socket) {
+  //   const requestPath = request.url.split('?')[0].split('#')[0]
+  //   if (!this._urlPath || this._urlPath === requestPath) {
+  //     this._handleUpgrade(request, socket)
+  //   }
+  //   try {
+  //     UWSConnectionEndpoint._terminateSocket(socket, 400, 'URL not supported')
+  //   } catch (e) {
+  //     // already terminated
+  //   }
+  // }
 
   /**
    * Terminate an HTTP socket with some error code and error message
@@ -686,30 +693,30 @@ module.exports = class UWSConnectionEndpoint extends events.EventEmitter {
    * @private
    * @returns {void}
    */
-  _handleUpgrade (request, socket) {
-    const secKey = request.headers['sec-websocket-key']
-    const socketHandle = socket.ssl ? socket._parent._handle : socket._handle
-    const sslState = socket.ssl ? socket.ssl._external : null
-    if (secKey && secKey.length === 24) {
-      socket.setNoDelay(this._noDelay)
-      const ticket = uws.native.transfer(
-        socketHandle.fd === -1 ? socketHandle : socketHandle.fd,
-        sslState
-      )
-      socket.on('close', () => {
-        if (this._serverGroup) {
-          this._upgradeRequest = request
-          uws.native.upgrade(
-            this._serverGroup,
-            ticket, secKey,
-            request.headers['sec-websocket-extensions'],
-            request.headers['sec-websocket-protocol']
-          )
-        }
-      })
-    }
-    socket.destroy()
-  }
+  // _handleUpgrade (request, socket) {
+  //   const secKey = request.headers['sec-websocket-key']
+  //   const socketHandle = socket.ssl ? socket._parent._handle : socket._handle
+  //   const sslState = socket.ssl ? socket.ssl._external : null
+  //   if (secKey && secKey.length === 24) {
+  //     socket.setNoDelay(this._noDelay)
+  //     const ticket = uws.native.transfer(
+  //       socketHandle.fd === -1 ? socketHandle : socketHandle.fd,
+  //       sslState
+  //     )
+  //     socket.on('close', () => {
+  //       if (this._serverGroup) {
+  //         this._upgradeRequest = request
+  //         uws.native.upgrade(
+  //           this._serverGroup,
+  //           ticket, secKey,
+  //           request.headers['sec-websocket-extensions'],
+  //           request.headers['sec-websocket-protocol']
+  //         )
+  //       }
+  //     })
+  //   }
+  //   socket.destroy()
+  // }
 
   /**
    * Closes the ws server connection. The ConnectionEndpoint
@@ -719,11 +726,11 @@ module.exports = class UWSConnectionEndpoint extends events.EventEmitter {
    */
   close () {
     this._server.removeAllListeners('request')
-    this._server.removeAllListeners('upgrade')
-    if (this._serverGroup) {
-      uws.native.server.group.close(this._serverGroup)
+    // this._server.removeAllListeners('upgrade')
+    if (this._wsServer) {
+      this._wsServer.close()
     }
-    this._serverGroup = null
+    this._wsServer = null
 
     this._server.close(() => {
       this.emit('close')

@@ -79,7 +79,7 @@ module.exports = class DeepstreamTest extends EventEmitter {
       },
       connectionEndpoints: {
         websocket: {
-          name: 'uws',
+          name: 'ws',
           options: {
             port: this._wsPort,
           }

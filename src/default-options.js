@@ -43,7 +43,7 @@ exports.get = function () {
      */
     connectionEndpoints: {
       websocket: {
-        name: 'uws',
+        name: 'ws',
         options: {
           port: 6020,
           host: '0.0.0.0',

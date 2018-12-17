@@ -1,4 +1,4 @@
-var uws = require('uws'),
+var WebSocket = require('ws'),
 	events = require( 'events' ),
 	utils = require( 'util' );
 
@@ -6,7 +6,7 @@ var Client = function( port ) {
 	this.isReady = false;
 	this.lastMessage = null;
 
-	this._connection =  uws( 'ws://localhost:' + port );
+	this._connection =  new WebSocket( 'ws://localhost:' + port );
 	this._connection.on( 'open', this._onOpen.bind( this ) );
 	this._connection.on( 'message', this._onMessage.bind( this ) );
 };
