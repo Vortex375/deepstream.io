@@ -45,10 +45,12 @@ class WsSocketWrapper extends EventEmitter {
   _bindSocket(heartbeatInterval) {
     this._socket.on('error', this.close.bind(this))
     this._socket.on('close', this.close.bind(this))
-    this._socket.on('message', this.onMessage.bind(this))
+    this._socket.on('message', (message) => this.onMessage(message))
 
     this._heartbeatInterval = setInterval(() => {
-      this.sendNative(messageBuilder.getMsg(C.TOPIC.CONNECTION, C.ACTIONS.PING))
+      if (this._socket.readyState == WebSocket.OPEN) {
+        this.sendNative(messageBuilder.getMsg(C.TOPIC.CONNECTION, C.ACTIONS.PING))
+      }
     }, heartbeatInterval)
   }
 
