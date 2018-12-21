@@ -104,9 +104,9 @@ class WsSocketWrapper extends EventEmitter {
    * @returns {void}
    */
   sendNative (message, allowBuffering) {
-    if (this._config.outgoingBufferTimeout === 0) {
+    if (this._config.outgoingBufferTimeout === 0 && this._socket.readyState == WebSocket.OPEN) {
       this._socket.send(message)
-    } else if (!allowBuffering) {
+    } else if ( ! allowBuffering && this._socket.readyState == WebSocket.OPEN) {
       this.flush()
       this._socket.send(message)
     } else {
