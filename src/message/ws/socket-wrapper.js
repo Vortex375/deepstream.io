@@ -79,7 +79,9 @@ class WsSocketWrapper extends EventEmitter {
    */
   sendPrepared (preparedMessage) {
     this.flush()
-    this._socket.send(preparedMessage)
+    if (this._socket.readyState == WebSocket.OPEN) {
+      this._socket.send(preparedMessage)
+    }
   }
 
   /**
@@ -121,7 +123,7 @@ class WsSocketWrapper extends EventEmitter {
    * and can wait to be bundled into another message if necessary
    */
   flush () {
-    if (this._bufferedWrites !== '') {
+    if (this._bufferedWrites !== '' && this._socket.readyState == WebSocket.OPEN) {
       this._socket.send(this._bufferedWrites)
       this._bufferedWrites = ''
     }
